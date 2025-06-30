@@ -1,9 +1,7 @@
-"""Collection of utility functions for LLM weight corruption and evaluation.
+"""Collection of utility functions for benchmarking open-source LLMs with the MMLU dataset.
 
-This module contains a collection of utility functions designed to support
-the LLM weight corruption and evaluation project. It handles common tasks
-such as safely loading JSON data, managing Hugging Face models and datasets,
-and providing helpers for displaying and selecting MMLU subjects and examples.
+This handles common tasks such as safely loading JSON data, managing Hugging Face models
+and datasets, and providing helpers for displaying and selecting MMLU subjects and examples.
 
 Functions:
     - load_config: Loads configuration settings from a YAML file.
@@ -35,7 +33,7 @@ def load_config(config_path: str = "config.yaml") -> tuple:
         config_path (str): The path to the YAML configuration file. Defaults to "config.yaml".
 
     Returns:
-        tuple: A tuple containing the model name, max new tokens, dataset name,
+        dict: A dictionary containing the model name, max new tokens, dataset name,
                quantization type, batch_status, batch_size,
                number of examples, number of subjects, results path, and log path.
 

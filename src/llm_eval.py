@@ -11,7 +11,7 @@ and outcomes for each subject.
 It supports quantization and batching, which can both be turned on or off.
 
 Functions:
-    - eval: The primary entry point for evaluation, determining whether to
+    - llm_eval: The primary entry point for evaluation, determining whether to
             use batching or single-item evaluation based on configuration.
     - single_llm_eval: The main evaluation function that orchestrates the
       prompting, response generation, prediction extraction, and accuracy
