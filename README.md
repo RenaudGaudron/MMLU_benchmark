@@ -19,14 +19,14 @@ This project provides an easy-to-use and standardised framework for evaluating b
 
 Currently, the following types of models are supported: 
 
-- Hugging Face transformer open-source models
+- Hugging Face `transformer` open-source models
 - Bedrock models
 
-Quantisation and batching are supported for the Hugging Face transformer open-source models.
+Quantisation and batching are supported for the Hugging Face `transformer` open-source models.
 
 ## Results structure
 
-Evaluation results will be saved in the results/ folder. JSON files will store the accuracy, number of examples, execution time, used VRAM, and available VRAM for each evaluated MMLU subject.
+Evaluation results will be saved in the `results/` folder. JSON files will store the accuracy, number of examples, execution time, used VRAM, and available VRAM for each evaluated MMLU subject.
 
 The evaluation results will be stored in a JSON file with the following structure (not actual data):
 
@@ -50,9 +50,14 @@ The evaluation results will be stored in a JSON file with the following structur
 ```
 
 ## License
-MIT License. Copyright holder: Renaud Gaudron
+- MIT License. 
+- Copyright holder: Renaud Gaudron
 
 ## Acknowledgements
-- Hugging Face Transformers for providing easy access to models and tokenisers.
-- Hugging Face Datasets for the MMLU dataset.
-- Qwen Team for releasing the Qwen3 1.7B model.
+This project leverages the incredible work of various communities. We extend our sincere gratitude to:
+
+* **Hugging Face:** For their invaluable `transformers` and `datasets` libraries, which are central to the LLM loading and data management within this benchmarking suite.
+* **Amazon Web Services (AWS):** For their Bedrock service and the `boto3` library.
+* **PyTorch:** For providing the foundational deep learning framework, essential for the operation of the Hugging Face models.
+* **MMLU Dataset Creators:** For developing and making available the Massive Multitask Language Understanding (MMLU) dataset, which forms the core of these LLM evaluations. The dataset can be found at: https://huggingface.co/datasets/cais/mmlu
+* **The Python Community:** For the rich ecosystem of libraries.
