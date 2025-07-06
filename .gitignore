@@ -1,4 +1,4 @@
 /src/__pycache__/
-/logs/
-/results/
-environment.yml
+/logs/*
+/results/*
+create_clean_env.sh

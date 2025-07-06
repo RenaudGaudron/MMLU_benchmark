@@ -1,18 +1,20 @@
-"""Collection of utility functions for benchmarking open-source LLMs with the MMLU dataset.
+"""Collection of utility functions for benchmarking LLMs with the MMLU dataset.
 
-This handles common tasks such as safely loading JSON data, managing Hugging Face models
-and datasets, and providing helpers for displaying and selecting MMLU subjects and examples.
+This module offers a collection of utility functions for benchmarking Large Language Models (LLMs)
+using the MMLU (Massive Multitask Language Understanding) dataset. It streamlines common tasks such
+as safely loading JSON data, managing Hugging Face models and datasets, setting up Bedrock models,
+and providing helpers for displaying and selecting MMLU subjects and examples.
 
 Functions:
     - load_config: Loads configuration settings from a YAML file.
     - load_json_safely: Safely loads JSON data from a specified file path.
-    - load_model_and_tokenizer: Loads a pre-trained Hugging Face model and tokenizer.
+    - setup_model: Loads a pre-trained Hugging Face model and tokeniser or sets up a Bedrock model.
     - load_and_prepare_dataset: Loads and optionally samples from a Hugging Face dataset.
     - list_subjects: Extracts and optionally displays unique subjects from a dataset.
     - display_results: Displays previously evaluated subjects and their performance metrics.
     - random_subject: Selects a random, unevaluated subject from a list.
     - print_random_examples: Prints random examples from a filtered dataset for inspection.
-    - get_nvidia_smi_output: Fetches the used and total VRAM using nvidia-smi
+    - get_nvidia_smi_output: Fetches the used and total VRAM using nvidia-smi.
 """
 
 import json
@@ -20,6 +22,7 @@ import random as rd
 import subprocess
 from pathlib import Path
 
+import boto3
 import torch
 import yaml
 from datasets import Dataset, disable_progress_bar, load_dataset
@@ -29,13 +32,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 def load_config(config_path: str = "config.yaml") -> tuple:
     """Load configuration from a YAML file into a dict.
 
+    Also, prints the relevant parameters on screen.
+
     Args:
         config_path (str): The path to the YAML configuration file. Defaults to "config.yaml".
 
     Returns:
-        dict: A dictionary containing the model name, max new tokens, dataset name,
-               quantization type, batch_status, batch_size,
-               number of examples, number of subjects, results path, and log path.
+        dict: A dictionary containing the model information.
 
     """
     # Check if the config file exists directly in the current working directory
@@ -43,11 +46,16 @@ def load_config(config_path: str = "config.yaml") -> tuple:
         # Load the YAML configuration file
         config_dict = yaml.safe_load(f)
 
-        print(f"Model Name: {config_dict['model']['name']}")
-        print(f"Max New Tokens: {config_dict['model']['max_new_tokens']}")
-        print(f"Quantization: {config_dict['model']['quantization']}")
-        print(f"Batch status: {config_dict['model']['batch_status']}")
-        print(f"Batch size: {config_dict['model']['batch_size']}")
+        if config_dict["model_transformers"]["turned_on"]:
+            print(f"Model Name: {config_dict['model_transformers']['name']}")
+            print(f"Max New Tokens: {config_dict['model_transformers']['max_new_tokens']}")
+            print(f"quantisation: {config_dict['model_transformers']['quantisation']}")
+            print(f"Batch status: {config_dict['model_transformers']['batch_status']}")
+            print(f"Batch size: {config_dict['model_transformers']['batch_size']}")
+        elif config_dict["model_bedrock"]["turned_on"]:
+            print(f"Bedrock profile name: {config_dict['model_bedrock']['profile_name']}")
+            print(f"Region for profile: {config_dict['model_bedrock']['region_for_profile']}")
+            print(f"Model name: {config_dict['model_bedrock']['name']}")
 
         print(f"Dataset Name: {config_dict['dataset']['name']}")
         print(f"Number Examples: {config_dict['dataset']['number_examples']}")
@@ -62,6 +70,8 @@ def load_config(config_path: str = "config.yaml") -> tuple:
 def load_json_safely(config_dict: dict) -> tuple[str, dict]:
     """Load data from a JSON file, handling cases where the file is empty, malformed, or missing.
 
+    Handles two cases: Hugging Face transformer models and Bedrock models.
+
     Args:
         config_dict (dict): The dictionary containing the configuration settings.
 
@@ -73,14 +83,27 @@ def load_json_safely(config_dict: dict) -> tuple[str, dict]:
                             not valid JSON, or not found.
 
     """
-    result_path = (
-        config_dict["paths"]["results"]
-        + config_dict["model"]["quantization"]
-        + "_"
-        + str(config_dict["dataset"]["number_examples"])
-        + "_examples"
-        + ".json"
-    )
+    if config_dict["model_transformers"]["turned_on"]:
+        result_path = (
+            config_dict["paths"]["results"]
+            + config_dict["model_transformers"]["quantisation"]
+            + "_"
+            + str(config_dict["dataset"]["number_examples"])
+            + "_examples"
+            + ".json"
+        )
+    elif config_dict["model_bedrock"]["turned_on"]:
+        result_path = (
+            config_dict["paths"]["results"]
+            + (config_dict["model_bedrock"]["name"])
+            .replace(".", "_")
+            .replace(":", "_")
+            .replace("-", "_")
+            + "_"
+            + str(config_dict["dataset"]["number_examples"])
+            + "_examples"
+            + ".json"
+        )
 
     try:
         # Check if the file exists
@@ -105,64 +128,81 @@ def load_json_safely(config_dict: dict) -> tuple[str, dict]:
         return result_path, {}
 
 
-def load_model_and_tokenizer(config_dict: dict) -> dict:
-    """Load a pre-trained model and tokenizer from the Hugging Face Transformers library.
+def setup_model(config_dict: dict) -> dict:
+    """Set up the model, either a Huggingface transformer model or Bedrock model.
 
-    Also loads the BitsAndBytesConfig for quantization.
+    Huggingface transformer model: Load a pre-trained model and tokeniser from the library.
+    Also loads the BitsAndBytesConfig for quantisation. Handles batching.
+
+    Bedrock model: initialises boto3 session.
 
     Args:
         config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
-        dict: A dictionary containing the loaded model and tokenizer.
+        dict: A dictionary containing the loaded model and tokeniser.
 
     """
     model_dict = {}
 
-    print(
-        f"Loading model '{config_dict['model']['name']}' with quantization: "
-        f"{config_dict['model']['quantization']} "
-        f"and batching: {config_dict['model']['batch_status']}",
-    )
-
-    quantization_config = None
-
-    if config_dict["model"]["quantization"] == "4bit":
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-        )
-    elif config_dict["model"]["quantization"] == "8bit":
-        quantization_config = BitsAndBytesConfig(
-            load_in_8bit=True,
+    if config_dict["model_transformers"]["turned_on"]:
+        print(
+            f"Loading model '{config_dict['model_transformers']['name']}' with quantisation: "
+            f"{config_dict['model_transformers']['quantisation']} "
+            f"and batching: {config_dict['model_transformers']['batch_status']}",
         )
 
-    # Load the model and tokenizer
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            config_dict["model"]["name"],
-            quantization_config=quantization_config,
-            torch_dtype="auto",  # "auto" lets transformers decide based on config/model
-            device_map="auto",
+        quantisation_config = None
+
+        if config_dict["model_transformers"]["quantisation"] == "4bit":
+            quantisation_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
+        elif config_dict["model_transformers"]["quantisation"] == "8bit":
+            quantisation_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+            )
+
+        # Load the model and tokeniser
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                config_dict["model_transformers"]["name"],
+                quantisation_config=quantisation_config,
+                torch_dtype="auto",  # "auto" lets transformers decide based on config/model
+                device_map="auto",
+            )
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            print(
+                "Make sure you have `accelerate` and `bitsandbytes` installed with quantisation.",
+            )
+            raise
+
+        tokeniser = AutoTokenizer.from_pretrained(config_dict["model_transformers"]["name"])
+
+        # Configure tokeniser for batching if enabled
+        if config_dict["model_transformers"]["batch_status"]:
+            if tokeniser.pad_token is None:
+                tokeniser.pad_token = tokeniser.eos_token
+            tokeniser.padding_side = "left"
+
+        # Store the model and tokeniser
+        model_dict["model_transformers"] = model
+        model_dict["tokeniser"] = tokeniser
+
+    elif config_dict["model_bedrock"]["turned_on"]:
+        # Initialise a Boto3 Session with the specified profile
+        session = boto3.Session(
+            profile_name=config_dict["model_bedrock"]["profile_name"],
+            region_name=config_dict["model_bedrock"]["region_for_profile"],
         )
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        print("Make sure you have `accelerate` and `bitsandbytes` installed if using quantization.")
-        raise
 
-    tokenizer = AutoTokenizer.from_pretrained(config_dict["model"]["name"])
-
-    # Configure tokenizer for batching if enabled
-    if config_dict["model"]["batch_status"]:
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.padding_side = "left"
-
-    # Store the model and tokenizer
-    model_dict["model"] = model
-    model_dict["tokenizer"] = tokenizer
+        # Initialise the Bedrock Runtime client from the session
+        bedrock_runtime = session.client(service_name="bedrock-runtime")
+        model_dict["bedrock_runtime"] = bedrock_runtime
 
     return model_dict
 
