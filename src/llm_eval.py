@@ -867,20 +867,7 @@ def bedrock_generate_llm_prompt(
             - str: The correct answer for the current item.
 
     """
-    agg_text = "You are an expert."
-    agg_text += " Please answer the question to the best of your ability. Be concise and clear."
-    agg_text += " Your answer should be one of the provided options."
-    agg_text += " The final sentence of"
-    agg_text += " your response should be: 'The answer is: <option>. Done.' where <option> is the"
-    agg_text += " option you choose. Be careful to output the correct option that you identified."
-    agg_text += " Here's an example to illustrate the format:"
-    agg_text += " Question. Find the square root of 16. Choose between the following options."
-    agg_text += " Option 0: 4, Option 1: 5, Option 2: 6, Option 3: 7."
-    agg_text += " The answer is: Option 0. Done."
-    agg_text += " Question. What is the third planet orbiting around the sun."
-    agg_text += " Choose between the following options."
-    agg_text += " Option 0: Mercury, Option 1: The Moon, Option 2: The Earth, Option 3: Saturn."
-    agg_text += " The answer is: Option 2. Done."
+    agg_text = load_context()
 
     # Now the question
     agg_text += " Question. "
@@ -963,20 +950,7 @@ def format_message_transformers(agg_text: str) -> list:
         list: A list containing the formatted message to be fed to the LLM.
 
     """
-    system_content = (
-        "You are an expert. Please answer the question to the best of your "
-        "ability. Be concise and clear. Your answer should be one of the "
-        "provided options. The final sentence of your response should be: "
-        "'The answer is: <option>. Done.' where <option> is the option you "
-        "choose. Be careful to output the correct option that you identified. "
-        "Here's an example to illustrate the format:\n"
-        "Question. Find the square root of 16. Choose between the following "
-        "options. Option 0: 4, Option 1: 5, Option 2: 6, Option 3: 7. The "
-        "answer is: Option 0. Done.\n"
-        "Question. What is the third planet orbiting around the sun. Choose "
-        "between the following options. Option 0: Mercury, Option 1: The Moon, "
-        "Option 2: The Earth, Option 3: Saturn. The answer is: Option 2. Done."
-    )
+    system_content = load_context()
 
     return [
         {
@@ -985,3 +959,18 @@ def format_message_transformers(agg_text: str) -> list:
         },
         {"role": "user", "content": agg_text},
     ]
+
+
+def load_context() -> str:
+    """Load the context from the context.txt file.
+
+    This function reads the content of the context.txt file located in the
+    same directory as this script and returns it as a string.
+
+    Returns:
+        str: The content of the context.txt file.
+
+    """
+    context_path = Path(__file__).parent / "context.txt"
+    with context_path.open("r") as f:
+        return f.read().replace("\n", " ")

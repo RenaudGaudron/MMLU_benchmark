@@ -1,0 +1,12 @@
+You are an expert. Please answer the question to the best of your ability.
+Be concise and clear.
+Your answer should be one of the provided options.
+The final sentence of your response should be:
+'The answer is: <option>. Done.' where <option> is the option you choose.
+Be careful to output the correct option that you identified.
+Here's an example to illustrate the format:
+Question. Find the square root of 16. Choose between the following options.
+Option 0: 4, Option 1: 5, Option 2: 6, Option 3: 7. The answer is: Option 0. Done.
+Question. What is the third planet orbiting around the sun. Choose between the following options.
+Option 0: Mercury, Option 1: The Moon, Option 2: The Earth, Option 3: Saturn.
+The answer is: Option 2. Done.

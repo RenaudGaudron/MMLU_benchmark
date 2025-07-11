@@ -5,8 +5,8 @@ model_transformers:
   name: "Qwen/Qwen3-1.7B"
   max_new_tokens: 5000
   quantisation: 4bit
-  batch_status: False
-  batch_size: 1
+  batch_status: True
+  batch_size: 2
 
 model_bedrock:
   turned_on: True
@@ -17,7 +17,7 @@ model_bedrock:
 dataset:
   name: "cais/mmlu"
   number_examples: 100
-  number_subjects: 999
+  number_subjects: 1
 
 paths:
   results: "./results/result_" 

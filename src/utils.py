@@ -170,7 +170,7 @@ def setup_model(config_dict: dict) -> dict:
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 config_dict["model_transformers"]["name"],
-                quantisation_config=quantisation_config,
+                quantization_config=quantisation_config,
                 torch_dtype="auto",  # "auto" lets transformers decide based on config/model
                 device_map="auto",
             )
