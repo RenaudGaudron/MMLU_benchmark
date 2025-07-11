@@ -555,6 +555,8 @@ def cal_and_store_subject_acc(
     results_dict[subject] = {
         "accuracy": np.mean(acc_metric),
         "number_examples": len(dataset),
+        "prediction_list": pred,
+        "ground_truth_list": ref,
         "execution_time": execution_time,
         "used_VRAM": used_vram,
         "total_VRAM": total_vram,
@@ -597,6 +599,7 @@ def batch_generate_llm_prompt(
     batch_prompts: list,
     batch_log_prompts: list,
     batch_truth: list,
+    config_dict: dict,
 ) -> tuple[list[dict], str]:
     """Generate a formatted prompt for the LLM for a single item within a batch.
 
@@ -610,6 +613,7 @@ def batch_generate_llm_prompt(
         batch_log_prompts (list): A list to which the raw string prompt for logging
                                   will be appended.
         batch_truth (list): A list to which the ground truth will be appended.
+        config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
         tuple[list[dict], str]: A tuple containing:
@@ -626,7 +630,7 @@ def batch_generate_llm_prompt(
         if i < len(batch_items["choices"][batch_item_idx]) - 1:
             agg_text += ", "
 
-    messages = format_message_transformers(agg_text)
+    messages = format_message_transformers(agg_text, config_dict)
 
     batch_prompts.append(messages)
     batch_log_prompts.append(agg_text)
@@ -677,7 +681,7 @@ def single_iteration(
         desc=f"Processing {subject}: ",
     ):
         # Initialise processing for a single item
-        messages, log_prompt, correct_answer = single_generate_llm_prompt(item)
+        messages, log_prompt, correct_answer = single_generate_llm_prompt(item, config_dict)
 
         log_processing_item(f_log, subject, subject_dataset, i, log_prompt)
 
@@ -727,7 +731,7 @@ def single_iteration_bedrock(
         desc=f"Processing {subject}: ",
     ):
         # Initialise processing for a single item
-        messages, log_prompt, correct_answer = bedrock_generate_llm_prompt(item)
+        messages, log_prompt, correct_answer = bedrock_generate_llm_prompt(item, config_dict)
 
         log_processing_item(f_log, subject, subject_dataset, i, log_prompt)
 
@@ -799,6 +803,7 @@ def batch_iteration(
                 batch_prompts,
                 batch_log_prompts,
                 batch_truth,
+                config_dict,
             )
 
         batch_log_processing_item(f_log, subject, i, batch_size, len(subject_dataset))
@@ -822,6 +827,7 @@ def batch_iteration(
 
 def single_generate_llm_prompt(
     item: dict,
+    config_dict: dict,
 ) -> tuple[list[dict], str, str]:
     """Initialise the processing for a single item.
 
@@ -829,6 +835,7 @@ def single_generate_llm_prompt(
 
     Args:
         item (dict): A dictionary representing the current item from the dataset.
+        config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
         tuple[list[dict], str, str]: A tuple containing:
@@ -846,7 +853,7 @@ def single_generate_llm_prompt(
         if idx < len(item["choices"]) - 1:
             agg_text += ", "
 
-    messages = format_message_transformers(agg_text)
+    messages = format_message_transformers(agg_text, config_dict)
 
     correct_answer = item["answer"]
     return messages, agg_text, correct_answer
@@ -854,11 +861,13 @@ def single_generate_llm_prompt(
 
 def bedrock_generate_llm_prompt(
     item: dict,
+    config_dict: dict,
 ) -> tuple[list[dict], str, str]:
     """Initialise the processing for a single item. Bedrock models only.
 
     Args:
         item (dict): A dictionary representing the current item from the dataset.
+        config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
         tuple[list[dict], str, str]: A tuple containing:
@@ -867,7 +876,7 @@ def bedrock_generate_llm_prompt(
             - str: The correct answer for the current item.
 
     """
-    agg_text = load_context()
+    agg_text = load_context(config_dict["paths"]["context"])
 
     # Now the question
     agg_text += " Question. "
@@ -938,19 +947,20 @@ def single_generate_llm_response(
     return tokeniser.decode(output_ids_for_item, skip_special_tokens=True)
 
 
-def format_message_transformers(agg_text: str) -> list:
+def format_message_transformers(agg_text: str, config_dict: dict) -> list:
     """Format the message list for the LLM.
 
     Hugging Face transformer models only.
 
     Args:
         agg_text (str): The prepared question and answer for the LLM.
+        config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
         list: A list containing the formatted message to be fed to the LLM.
 
     """
-    system_content = load_context()
+    system_content = load_context(config_dict["paths"]["context"])
 
     return [
         {
@@ -961,16 +971,18 @@ def format_message_transformers(agg_text: str) -> list:
     ]
 
 
-def load_context() -> str:
+def load_context(context_path: str) -> str:
     """Load the context from the context.txt file.
 
     This function reads the content of the context.txt file located in the
     same directory as this script and returns it as a string.
 
+    Args:
+        context_path (str): The path to the context.txt file.
+
     Returns:
         str: The content of the context.txt file.
 
     """
-    context_path = Path(__file__).parent / "context.txt"
-    with context_path.open("r") as f:
+    with Path(context_path).open("r") as f:
         return f.read().replace("\n", " ")

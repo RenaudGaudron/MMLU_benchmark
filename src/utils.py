@@ -63,6 +63,7 @@ def load_config(config_path: str = "config.yaml") -> tuple:
 
         print(f"Results Path: {config_dict['paths']['results']}")
         print(f"Log Path: {config_dict['paths']['logs']}")
+        print(f"Context Path: {config_dict['paths']['context']}")
 
         return config_dict
 

@@ -1,15 +1,15 @@
 # config.yaml
 
 model_transformers:
-  turned_on: False
+  turned_on: True
   name: "Qwen/Qwen3-1.7B"
   max_new_tokens: 5000
-  quantisation: 4bit
+  quantisation: None
   batch_status: True
   batch_size: 2
 
 model_bedrock:
-  turned_on: True
+  turned_on: False
   profile_name: YOUR_PROFILE_NAME
   region_for_profile: YOUR_AWS_REGION
   name: LLM_NAME
@@ -22,3 +22,4 @@ dataset:
 paths:
   results: "./results/result_" 
   logs: "./logs/log_"
+  context: "./src/context.txt"
