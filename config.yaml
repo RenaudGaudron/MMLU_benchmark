@@ -20,6 +20,6 @@ dataset:
   number_subjects: 1
 
 paths:
-  results: "./results/result_" 
-  logs: "./logs/log_"
+  results: "./results/results.json" 
   context: "./src/context.txt"
+  logs: "./logs/log_"

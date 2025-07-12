@@ -84,27 +84,7 @@ def load_json_safely(config_dict: dict) -> tuple[str, dict]:
                             not valid JSON, or not found.
 
     """
-    if config_dict["model_transformers"]["turned_on"]:
-        result_path = (
-            config_dict["paths"]["results"]
-            + config_dict["model_transformers"]["quantisation"]
-            + "_"
-            + str(config_dict["dataset"]["number_examples"])
-            + "_examples"
-            + ".json"
-        )
-    elif config_dict["model_bedrock"]["turned_on"]:
-        result_path = (
-            config_dict["paths"]["results"]
-            + (config_dict["model_bedrock"]["name"])
-            .replace(".", "_")
-            .replace(":", "_")
-            .replace("-", "_")
-            + "_"
-            + str(config_dict["dataset"]["number_examples"])
-            + "_examples"
-            + ".json"
-        )
+    result_path = config_dict["paths"]["results"]
 
     try:
         # Check if the file exists
