@@ -17,6 +17,7 @@ Functions:
     - get_nvidia_smi_output: Fetches the used and total VRAM using nvidia-smi.
 """
 
+import hashlib
 import json
 import random as rd
 import subprocess
@@ -346,3 +347,25 @@ def get_nvidia_smi_output() -> tuple[float, float]:
     # Parse the output
     used_memory_mb, total_memory_mb = map(int, output.split(","))
     return used_memory_mb, total_memory_mb
+
+
+def get_unique_id(input_string: str) -> str:
+    """Generate a unique SHA-256 hash for a given string.
+
+    Args:
+        input_string (str): The input string for which to generate a unique ID.
+
+    Returns:
+        str: A hexadecimal string representing the SHA-256 hash of the input string.
+
+    """
+    # Encode the string to bytes, as hash functions operate on bytes
+    bytes_string = input_string.encode("utf-8")
+
+    # Create a SHA-256 hash object
+    hasher = hashlib.sha256()
+
+    # Update the hash object with the bytes string
+    hasher.update(bytes_string)
+
+    return hasher.hexdigest()

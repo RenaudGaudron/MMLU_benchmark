@@ -61,7 +61,6 @@ from pathlib import Path
 from typing import TextIO
 
 import evaluate
-import numpy as np
 import torch
 from datasets import Dataset
 from tqdm import tqdm
@@ -144,22 +143,14 @@ def batch_llm_eval(
         for subject in subject_of_interest:
             start_time = log_subject_initialisation(f_log, subject)
 
-            # Reset the lists containing the answers, predictions, and accuracy
-            references, predictions, acc_metric = ([] for _ in range(3))
+            # Reset the dict containing the answers, predictions, and question ID
+            question_dict = {"question_id": [], "references": [], "predictions": []}
 
             # Filtering the dataset to the subject of interest
             subject_dataset = dataset.filter(lambda x, s=subject: x["subject"] == s)
 
             # Iterate through a subject's dataset in batches
-            batch_iteration(
-                f_log,
-                model_dict,
-                config_dict,
-                subject_dataset,
-                subject,
-                references,
-                predictions,
-            )
+            batch_iteration(f_log, model_dict, config_dict, subject_dataset, subject, question_dict)
 
             # Calculate and store the accuracy for the subject
             cal_and_store_subject_acc(
@@ -167,9 +158,7 @@ def batch_llm_eval(
                 result_path,
                 start_time,
                 subject,
-                predictions,
-                references,
-                acc_metric,
+                question_dict,
                 results_dict,
                 subject_dataset,
             )
@@ -204,8 +193,8 @@ def single_llm_eval(
         for subject in subject_of_interest:
             start_time = log_subject_initialisation(f_log, subject)
 
-            # Reset the lists containing the answers, predictions, and accuracy
-            references, predictions, acc_metric = ([] for _ in range(3))
+            # Reset the dict containing the answers, predictions, and question ID
+            question_dict = {"question_id": [], "references": [], "predictions": []}
 
             # Filtering the dataset to the subject of interest
             subject_dataset = dataset.filter(lambda x, s=subject: x["subject"] == s)
@@ -218,8 +207,7 @@ def single_llm_eval(
                     config_dict,
                     subject_dataset,
                     subject,
-                    references,
-                    predictions,
+                    question_dict,
                 )
             elif config_dict["model_bedrock"]["turned_on"]:
                 single_iteration_bedrock(
@@ -228,8 +216,7 @@ def single_llm_eval(
                     config_dict,
                     subject_dataset,
                     subject,
-                    references,
-                    predictions,
+                    question_dict,
                 )
 
             # Calculate and store the accuracy for the subject
@@ -238,9 +225,7 @@ def single_llm_eval(
                 result_path,
                 start_time,
                 subject,
-                predictions,
-                references,
-                acc_metric,
+                question_dict,
                 results_dict,
                 subject_dataset,
             )
@@ -434,7 +419,7 @@ def batch_generate_llm_response(
     return decoded_responses
 
 
-def log_response(f_log: TextIO, response: str, correct: str, references: list) -> None:
+def log_response(f_log: TextIO, response: str, correct: str, question_dict: dict) -> None:
     """Log the LLM's generated answer and the corresponding correct answer to the log file.
 
     This function writes both the LLM's output and the ground truth answer
@@ -444,7 +429,8 @@ def log_response(f_log: TextIO, response: str, correct: str, references: list) -
         f_log (TextIO): The log file object to write the information to.
         response (str): The LLM's generated response.
         correct (str): The correct answer associated with the question.
-        references (list): A list to store the correct answers for reference.
+        question_dict (dict): A dictionary to store the question ID, references,
+                            and predictions for the current subject.
 
     """
     f_log.write(f"Response made by LLM: {response} \n")
@@ -454,15 +440,10 @@ def log_response(f_log: TextIO, response: str, correct: str, references: list) -
     f_log.write("--" * 50 + "\n")
 
     # Storing the correct answer in the reference list
-    references.append(correct)
+    question_dict["references"].append(correct)
 
 
-def extract_and_log_prediction(
-    f_log: TextIO,
-    response: str,
-    predictions: list,
-    references: list,
-) -> None:
+def extract_and_log_prediction(f_log: TextIO, response: str, question_dict: dict) -> None:
     """Extract the predicted answer from an LLM's response.
 
     This is done using regex, then logs the extracted prediction,
@@ -476,9 +457,8 @@ def extract_and_log_prediction(
     Args:
         f_log (TextIO): The log file object to write the extracted prediction to.
         response (str): The raw text response generated by the LLM.
-        predictions (list): A list to which the extracted integer prediction (or 99
-                            if parsing fails) will be appended.
-        references (list): A list containing the correct answers for reference.
+        question_dict (dict): A dictionary to store the question ID, references,
+                            and predictions for the current subject.
 
     """
     # Extracting the model's answer using Regex
@@ -494,13 +474,13 @@ def extract_and_log_prediction(
 
     # Storing the predicted index
     try:
-        predictions.append(int(predicted_answer))
+        question_dict["predictions"].append(int(predicted_answer))
     except ValueError:
-        predictions.append(99)
+        question_dict["predictions"].append(99)
 
     # Printing the references and predictions for debugging
-    f_log.write(f"References: {references} \n")
-    f_log.write(f"Predictions: {predictions} \n")
+    f_log.write(f"References: {question_dict['references']} \n")
+    f_log.write(f"Predictions: {question_dict['predictions']} \n")
     f_log.write("--" * 50 + "\n")
 
 
@@ -509,9 +489,7 @@ def cal_and_store_subject_acc(
     result_path: str,
     start_time: time,
     subject: str,
-    pred: list,
-    ref: list,
-    acc_metric: list,
+    question_dict: dict,
     results_dict: dict,
     dataset: Dataset,
 ) -> None:
@@ -525,11 +503,7 @@ def cal_and_store_subject_acc(
         result_path (str): The location of the JSON file containing the results.
         start_time (time): The start time of the timer, used to calculate the execution time.
         subject (str): The name of the subject for which the accuracy is being computed.
-        pred (list): A list of the model's predicted answers (typically integer indices).
-        ref (list): A list of the ground truth answers (typically integer indices).
-        acc_metric (list): A list accumulating accuracy scores for the current subject.
-                           The calculated accuracy for the current set of predictions/references
-                           will be appended to this list.
+        question_dict (dict): A dictionary containing the question ID, references, and predictions.
         results_dict (dict): The dictionary where the overall evaluation results
                              for each subject are stored.
         dataset (Dataset): The Hugging Face Dataset object containing only the examples for the
@@ -544,7 +518,10 @@ def cal_and_store_subject_acc(
 
     # Calculating accuracy for the subject
     f_log.write(f"Calculating accuracy for the subject: {subject} \n")
-    acc_metric.append(accuracy_metric.compute(predictions=pred, references=ref)["accuracy"])
+    acc_metric = accuracy_metric.compute(
+        predictions=question_dict["predictions"],
+        references=question_dict["references"],
+    )["accuracy"]
     f_log.write(f"The accuracy for subject {subject} is {acc_metric} \n\n")
     f_log.write("--" * 50 + "\n")
 
@@ -553,10 +530,10 @@ def cal_and_store_subject_acc(
 
     # Adding the results to the results dictionary
     results_dict[subject] = {
-        "accuracy": np.mean(acc_metric),
+        "accuracy": acc_metric,
         "number_examples": len(dataset),
-        "prediction_list": pred,
-        "ground_truth_list": ref,
+        "prediction_list": question_dict["predictions"],
+        "ground_truth_list": question_dict["references"],
         "execution_time": execution_time,
         "used_VRAM": used_vram,
         "total_VRAM": total_vram,
@@ -645,8 +622,7 @@ def single_iteration(
     config_dict: dict,
     subject_dataset: Dataset,
     subject: str,
-    references: list,
-    predictions: list,
+    question_dict: dict,
 ) -> None:
     """Iterate through a subject's dataset without batching.
 
@@ -665,12 +641,8 @@ def single_iteration(
         subject_dataset (Dataset): The subset of the dataset containing items relevant to
                             the current subject.
         subject (str): The name of the subject currently being evaluated.
-        references (list): A list to accumulate all ground truth answers (references)
-                            for the current subject's items. This list is updated
-                            during the processing of each item.
-        predictions (list): A list to accumulate all extracted predictions from the LLM
-                            for the current subject's items. This list is updated
-                            during the processing of each item.
+        question_dict (dict): A dictionary to store the question ID, references,
+                              and predictions for the current subject.
 
     """
     max_new_tokens = config_dict["model_transformers"]["max_new_tokens"]
@@ -689,8 +661,8 @@ def single_iteration(
         response = single_generate_llm_response(messages, model_dict, max_new_tokens)
 
         # Log response and extract prediction
-        log_response(f_log, response, correct_answer, references)
-        extract_and_log_prediction(f_log, response, predictions, references)
+        log_response(f_log, response, correct_answer, question_dict)
+        extract_and_log_prediction(f_log, response, question_dict)
 
 
 def single_iteration_bedrock(
@@ -699,8 +671,7 @@ def single_iteration_bedrock(
     config_dict: dict,
     subject_dataset: Dataset,
     subject: str,
-    references: list,
-    predictions: list,
+    question_dict: dict,
 ) -> None:
     """Iterate through a subject's dataset using a Bedrock model.
 
@@ -717,12 +688,8 @@ def single_iteration_bedrock(
         subject_dataset (Dataset): The subset of the dataset containing items relevant to
                             the current subject.
         subject (str): The name of the subject currently being evaluated.
-        references (list): A list to accumulate all ground truth answers (references)
-                            for the current subject's items. This list is updated
-                            during the processing of each item.
-        predictions (list): A list to accumulate all extracted predictions from the LLM
-                            for the current subject's items. This list is updated
-                            during the processing of each item.
+        question_dict (dict): A dictionary to store the question ID, references,
+                              and predictions for the current subject.
 
     """
     for i, item in tqdm(
@@ -745,8 +712,8 @@ def single_iteration_bedrock(
         response = model_response["output"]["message"]["content"][0]["text"]
 
         # Log response and extract prediction
-        log_response(f_log, response, correct_answer, references)
-        extract_and_log_prediction(f_log, response, predictions, references)
+        log_response(f_log, response, correct_answer, question_dict)
+        extract_and_log_prediction(f_log, response, question_dict)
 
 
 def batch_iteration(
@@ -755,8 +722,7 @@ def batch_iteration(
     config_dict: dict,
     subject_dataset: Dataset,
     subject: str,
-    references: list,
-    predictions: list,
+    question_dict: dict,
 ) -> None:
     """Iterate through a subject's dataset in batches.
 
@@ -775,12 +741,8 @@ def batch_iteration(
         subject_dataset (Dataset): The subset of the dataset containing items relevant to
                            the current subject.
         subject (str): The name of the subject currently being evaluated.
-        references (list): A list to accumulate all ground truth answers (references)
-                           for the current subject's items. This list is updated
-                           during the processing of each batch.
-        predictions (list): A list to accumulate all extracted predictions from the LLM
-                            for the current subject's items. This list is updated
-                            during the processing of each batch.
+        question_dict (dict): A dictionary to store the question IDs, references,
+                              and predictions for the current subject.
 
     """
     batch_size = config_dict["model_transformers"]["batch_size"]
@@ -821,8 +783,8 @@ def batch_iteration(
 
             log_processing_item(f_log, subject, subject_dataset, i + j, batch_log_prompts[j])
 
-            log_response(f_log, response, correct, references)
-            extract_and_log_prediction(f_log, response, predictions, references)
+            log_response(f_log, response, correct, question_dict)
+            extract_and_log_prediction(f_log, response, question_dict)
 
 
 def single_generate_llm_prompt(
