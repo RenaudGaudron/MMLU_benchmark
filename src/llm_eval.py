@@ -65,13 +65,11 @@ import torch
 from datasets import Dataset
 from tqdm import tqdm
 
-from src.utils import get_nvidia_smi_output
+from src.utils import get_nvidia_smi_output, get_unique_id
 
 
 def llm_eval(
     dataset: Dataset,
-    result_path: str,
-    model_dict: dict,
     subject_of_interest: list,
     results_dict: dict,
     config_dict: dict,
@@ -84,8 +82,6 @@ def llm_eval(
 
     Args:
         dataset (Dataset): The Huggingface dataset containing the questions and answers.
-        result_path (str): The path of the JSON file containing the result for this quantisation.
-        model_dict (dict): The dictionary containing the model settings.
         subject_of_interest (list): A list containing the subjects to be evaluated.
         results_dict (dict): A dictionary to store the evaluation results for each subject.
         config_dict (dict): The dictionary containing the configuration settings.
@@ -98,8 +94,6 @@ def llm_eval(
         print("Huggingface model. Batch status is True. Calling batch_llm_eval...")
         batch_llm_eval(
             dataset,
-            result_path,
-            model_dict,
             subject_of_interest,
             results_dict,
             config_dict,
@@ -108,8 +102,6 @@ def llm_eval(
         print("Batch status is False. Calling single_llm_eval...")
         single_llm_eval(
             dataset,
-            result_path,
-            model_dict,
             subject_of_interest,
             results_dict,
             config_dict,
@@ -118,8 +110,6 @@ def llm_eval(
 
 def batch_llm_eval(
     dataset: Dataset,
-    result_path: str,
-    model_dict: dict,
     subject_of_interest: list,
     results_dict: dict,
     config_dict: dict,
@@ -128,8 +118,6 @@ def batch_llm_eval(
 
     Args:
         dataset (Dataset): The Huggingface dataset containing the questions and answers.
-        result_path (str): The path of the JSON file containing the result for this quantisation.
-        model_dict (dict): The dictionary containing the model and tokeniser.
         subject_of_interest (list): A list containing the subjects to be evaluated.
         results_dict (dict): A dictionary to store the evaluation results for each subject.
         config_dict (dict): The dictionary containing the configuration settings.
@@ -156,13 +144,13 @@ def batch_llm_eval(
             }
 
             # Iterate through a subject's dataset in batches
-            batch_iteration(f_log, model_dict, config_dict, subject_dict)
+            batch_iteration(f_log, config_dict, subject_dict)
 
             # Calculate and store the accuracy for the subject
             cal_and_store_subject_acc(
                 f_log,
-                result_path,
                 start_time,
+                config_dict,
                 subject_dict,
                 results_dict,
             )
@@ -170,8 +158,6 @@ def batch_llm_eval(
 
 def single_llm_eval(
     dataset: Dataset,
-    result_path: str,
-    model_dict: dict,
     subject_of_interest: list,
     results_dict: dict,
     config_dict: dict,
@@ -182,8 +168,6 @@ def single_llm_eval(
 
     Args:
         dataset (Dataset): The Huggingface dataset containing the questions and answers.
-        result_path (str): The path of the JSON file containing the result for this quantisation.
-        model_dict (dict): The dictionary containing the model settings.
         subject_of_interest (list): A list containing the subjects to be evaluated.
         results_dict (dict): A dictionary to store the evaluation results for each subject.
         config_dict (dict): The dictionary containing the configuration settings.
@@ -213,14 +197,12 @@ def single_llm_eval(
             if config_dict["model_transformers"]["turned_on"]:
                 single_iteration(
                     f_log,
-                    model_dict,
                     config_dict,
                     subject_dict,
                 )
             elif config_dict["model_bedrock"]["turned_on"]:
                 single_iteration_bedrock(
                     f_log,
-                    model_dict,
                     config_dict,
                     subject_dict,
                 )
@@ -228,8 +210,8 @@ def single_llm_eval(
             # Calculate and store the accuracy for the subject
             cal_and_store_subject_acc(
                 f_log,
-                result_path,
                 start_time,
+                config_dict,
                 subject_dict,
                 results_dict,
             )
@@ -349,9 +331,11 @@ def log_processing_item(
 
     """
     f_log.write(
-        f"Subject {subject_dict['subject']} - Processing item number:"
+        f"Subject {subject_dict['subject']} - Processing item number: "
         f"{item + 1} out of {len(subject_dict['dataset'])} \n",
     )
+    f_log.write("--" * 50 + "\n")
+    f_log.write(f"Question ID: {subject_dict['question_id'][-1]}" + "\n")
     f_log.write("--" * 50 + "\n")
 
     f_log.write(
@@ -362,8 +346,7 @@ def log_processing_item(
 
 def batch_generate_llm_response(
     batch_messages: list[list[dict]],
-    model_dict: dict,
-    max_new_tokens: int = 38_912,
+    config_dict: dict,
 ) -> list[str]:
     """Generate text responses from a Language Model (LLM) for a batch of messages.
 
@@ -375,16 +358,18 @@ def batch_generate_llm_response(
     Args:
         batch_messages (List[List[dict]]): A list of message lists, where each inner list
                                             represents the chat history for one item in the batch.
-        model_dict (dict): The dictionary containing the model and tokeniser.
-        max_new_tokens (int): The maximum number of new tokens to generate for each response.
+        config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
         List[str]: A list of generated text responses from the LLM, one for each item in the batch.
 
     """
     # Load the tokeniser and model
-    tokeniser = model_dict["tokeniser"]
-    model = model_dict["model_transformers"]
+    tokeniser = config_dict["model_transformers"]["tokeniser"]
+    model = config_dict["model_transformers"]["model"]
+
+    # Get the maximum number of new tokens to generate
+    max_new_tokens = config_dict["model_transformers"]["max_new_tokens"]
 
     # Apply chat template to each set of messages in the batch
     batch_texts = [
@@ -488,8 +473,8 @@ def extract_and_log_prediction(f_log: TextIO, response: str, subject_dict: dict)
 
 def cal_and_store_subject_acc(
     f_log: TextIO,
-    result_path: str,
     start_time: time,
+    config_dict: dict,
     subject_dict: dict,
     results_dict: dict,
 ) -> None:
@@ -500,8 +485,8 @@ def cal_and_store_subject_acc(
 
     Args:
         f_log (TextIO): The log file object.
-        result_path (str): The location of the JSON file containing the results.
         start_time (time): The start time of the timer, used to calculate the execution time.
+        config_dict (dict): The dictionary containing the configuration settings.
         subject_dict (dict): A dictionary containing the question ID, references, and predictions.
         results_dict (dict): The dictionary where the overall evaluation results
                              for each subject are stored.
@@ -532,11 +517,13 @@ def cal_and_store_subject_acc(
         "execution_time": execution_time,
         "used_VRAM": used_vram,
         "total_VRAM": total_vram,
-        "detailed_results": {key: subject_dict[key] for key in ["references", "predictions"]},
+        "detailed_results": {
+            key: subject_dict[key] for key in ["question_id", "references", "predictions"]
+        },
     }
 
     # Save the results to the result JSON file
-    with Path(result_path).open("w") as f:
+    with Path(config_dict["paths"]["results"]).open("w") as f:
         json.dump(results_dict, f, indent=4)
 
 
@@ -612,7 +599,6 @@ def batch_generate_llm_prompt(
 
 def single_iteration(
     f_log: TextIO,
-    model_dict: dict,
     config_dict: dict,
     subject_dict: dict,
 ) -> None:
@@ -628,26 +614,27 @@ def single_iteration(
     Args:
         f_log (TextIO): The file object for the evaluation log, where processing
                         details and results will be written.
-        model_dict (dict): The dictionary containing the model and tokeniser.
         config_dict (dict): The dict containing the configuration settings.
         subject_dict (dict): A dictionary to store the question ID, references,
                               and predictions for the current subject.
 
     """
-    max_new_tokens = config_dict["model_transformers"]["max_new_tokens"]
-
     for i, item in tqdm(
         enumerate(subject_dict["dataset"]),
         total=len(subject_dict["dataset"]),
         desc=f"Processing {subject_dict['subject']}: ",
     ):
         # Initialise processing for a single item
-        messages, log_prompt, correct_answer = single_generate_llm_prompt(item, config_dict)
+        messages, log_prompt, correct_answer = single_generate_llm_prompt(
+            item,
+            config_dict,
+            subject_dict,
+        )
 
         log_processing_item(f_log, subject_dict, i, log_prompt)
 
         # Generate response for the single item
-        response = single_generate_llm_response(messages, model_dict, max_new_tokens)
+        response = single_generate_llm_response(messages, config_dict)
 
         # Log response and extract prediction
         log_response(f_log, response, correct_answer, subject_dict)
@@ -656,7 +643,6 @@ def single_iteration(
 
 def single_iteration_bedrock(
     f_log: TextIO,
-    model_dict: dict,
     config_dict: dict,
     subject_dict: dict,
 ) -> None:
@@ -670,7 +656,6 @@ def single_iteration_bedrock(
     Args:
         f_log (TextIO): The file object for the evaluation log, where processing
                         details and results will be written.
-        model_dict (dict): The dictionary containing the model settings.
         config_dict (dict): The dict containing the configuration settings.
         subject_dict (dict): A dictionary to store the question ID, references,
                               and predictions for the current subject.
@@ -682,13 +667,17 @@ def single_iteration_bedrock(
         desc=f"Processing {subject_dict['subject']}: ",
     ):
         # Initialise processing for a single item
-        messages, log_prompt, correct_answer = bedrock_generate_llm_prompt(item, config_dict)
+        messages, log_prompt, correct_answer = bedrock_generate_llm_prompt(
+            item,
+            config_dict,
+            subject_dict,
+        )
 
         log_processing_item(f_log, subject_dict, i, log_prompt)
 
         # Generate response for the single item
 
-        model_response = model_dict["bedrock_runtime"].converse(
+        model_response = config_dict["model_bedrock"]["bedrock_runtime"].converse(
             modelId=config_dict["model_bedrock"]["name"],
             messages=messages,
         )
@@ -702,7 +691,6 @@ def single_iteration_bedrock(
 
 def batch_iteration(
     f_log: TextIO,
-    model_dict: dict,
     config_dict: dict,
     subject_dict: dict,
 ) -> None:
@@ -718,14 +706,12 @@ def batch_iteration(
     Args:
         f_log (TextIO): The file object for the evaluation log, where processing
                         details and results will be written.
-        model_dict (dict): The dictionary containing the model and tokeniser.
         config_dict (dict): The dict containing the configuration settings.
         subject_dict (dict): A dictionary to store the question IDs, references,
                               and predictions for the current subject.
 
     """
     batch_size = config_dict["model_transformers"]["batch_size"]
-    max_new_tokens = config_dict["model_transformers"]["max_new_tokens"]
 
     # Iterate through the dataset in batches
     for i in tqdm(
@@ -755,12 +741,14 @@ def batch_iteration(
         # Generate responses for the entire batch
         batch_responses = batch_generate_llm_response(
             batch_prompts,
-            model_dict,
-            max_new_tokens,
+            config_dict,
         )
 
         # Process each response and correct answer in the batch
         for j, response in enumerate(batch_responses):
+            # Store the question ID for the current item
+            subject_dict["question_id"].append(get_unique_id(batch_items["question"][j]))
+
             correct = batch_truth[j]
 
             log_processing_item(f_log, subject_dict, i + j, batch_log_prompts[j])
@@ -772,6 +760,7 @@ def batch_iteration(
 def single_generate_llm_prompt(
     item: dict,
     config_dict: dict,
+    subject_dict: dict,
 ) -> tuple[list[dict], str, str]:
     """Initialise the processing for a single item.
 
@@ -780,6 +769,8 @@ def single_generate_llm_prompt(
     Args:
         item (dict): A dictionary representing the current item from the dataset.
         config_dict (dict): The dictionary containing the configuration settings.
+        subject_dict (dict): A dictionary to store the question ID, references,
+                            and predictions for the current subject.
 
     Returns:
         tuple[list[dict], str, str]: A tuple containing:
@@ -788,6 +779,9 @@ def single_generate_llm_prompt(
             - str: The correct answer for the current item.
 
     """
+    # Creating the unique ID for the question
+    subject_dict["question_id"].append(get_unique_id(item["question"]))
+
     agg_text = "Question. "
     agg_text += item["question"]
     agg_text += ". Choose between the following options. "
@@ -806,12 +800,15 @@ def single_generate_llm_prompt(
 def bedrock_generate_llm_prompt(
     item: dict,
     config_dict: dict,
+    subject_dict: dict,
 ) -> tuple[list[dict], str, str]:
     """Initialise the processing for a single item. Bedrock models only.
 
     Args:
         item (dict): A dictionary representing the current item from the dataset.
         config_dict (dict): The dictionary containing the configuration settings.
+        subject_dict (dict): A dictionary to store the question ID, references,
+                            and predictions for the current subject.
 
     Returns:
         tuple[list[dict], str, str]: A tuple containing:
@@ -821,6 +818,9 @@ def bedrock_generate_llm_prompt(
 
     """
     agg_text = load_context(config_dict["paths"]["context"])
+
+    # Creating the unique ID for the question
+    subject_dict["question_id"].append(get_unique_id(item["question"]))
 
     # Now the question
     agg_text += " Question. "
@@ -844,8 +844,7 @@ def bedrock_generate_llm_prompt(
 
 def single_generate_llm_response(
     messages: list[dict],
-    model_dict: dict,
-    max_new_tokens: int = 38_912,
+    config_dict: dict,
 ) -> str:
     """Generate a text response from a Language Model (LLM) for a single set of messages.
 
@@ -858,16 +857,18 @@ def single_generate_llm_response(
     Args:
         messages (list[dict]): A list of dictionaries representing the chat history
                                for a single conversational turn.
-        model_dict (dict): The dictionary containing the model and tokeniser.
-        max_new_tokens (int): The maximum number of new tokens to generate for the response.
+        config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
         str: The generated text response from the LLM.
 
     """
     # Load the tokeniser and model
-    tokeniser = model_dict["tokeniser"]
-    model = model_dict["model_transformers"]
+    tokeniser = config_dict["model_transformers"]["tokeniser"]
+    model = config_dict["model_transformers"]["model"]
+
+    # Get the maximum number of new tokens to generate
+    max_new_tokens = config_dict["model_transformers"]["max_new_tokens"]
 
     # Apply chat template to the single set of messages
     text = tokeniser.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)

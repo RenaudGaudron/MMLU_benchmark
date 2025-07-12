@@ -10,13 +10,13 @@ model_transformers:
 
 model_bedrock:
   turned_on: False
-  profile_name: YOUR_PROFILE_NAME
-  region_for_profile: YOUR_AWS_REGION
-  name: LLM_NAME
+  profile_name:
+  region_for_profile:
+  name:
 
 dataset:
   name: "cais/mmlu"
-  number_examples: 100
+  number_examples: 200
   number_subjects: 1
 
 paths:

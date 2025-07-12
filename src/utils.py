@@ -69,7 +69,7 @@ def load_config(config_path: str = "config.yaml") -> tuple:
         return config_dict
 
 
-def load_json_safely(config_dict: dict) -> tuple[str, dict]:
+def load_json_safely(config_dict: dict) -> dict:
     """Load data from a JSON file, handling cases where the file is empty, malformed, or missing.
 
     Handles two cases: Hugging Face transformer models and Bedrock models.
@@ -78,11 +78,9 @@ def load_json_safely(config_dict: dict) -> tuple[str, dict]:
         config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
-        tuple[str, dict]: A tuple containing:
-                          - The full path of the file that was attempted to be loaded.
-                          - The data loaded from the JSON file as a dictionary.
-                            Returns an empty dictionary `{}` if the file is empty,
-                            not valid JSON, or not found.
+        dict: The data loaded from the JSON file as a dictionary.
+                Returns an empty dictionary `{}` if the file is empty,
+                not valid JSON, or not found.
 
     """
     result_path = config_dict["paths"]["results"]
@@ -93,21 +91,21 @@ def load_json_safely(config_dict: dict) -> tuple[str, dict]:
             print(
                 f"Warning: The file '{result_path}' was not found. Returning an empty dictionary.",
             )
-            return result_path, {}
+            return {}
 
         # Check if the file is empty
         if Path(result_path).stat().st_size == 0:
             print(f"Warning: The file '{result_path}' is empty. Returning an empty dictionary.")
-            return result_path, {}
+            return {}
 
         with Path(result_path).open(encoding="utf-8") as f:
-            return result_path, json.load(f)
+            return json.load(f)
     except json.JSONDecodeError:
         print(
             f"Error: Could not decode JSON from the file '{result_path}'. "
             "It might be malformed or not contain valid JSON. Returning an empty dictionary.",
         )
-        return result_path, {}
+        return {}
 
 
 def setup_model(config_dict: dict) -> dict:
@@ -122,11 +120,9 @@ def setup_model(config_dict: dict) -> dict:
         config_dict (dict): The dictionary containing the configuration settings.
 
     Returns:
-        dict: A dictionary containing the loaded model and tokeniser.
+        dict: The dictionary containing the configuration settings + model and tokeniser.
 
     """
-    model_dict = {}
-
     if config_dict["model_transformers"]["turned_on"]:
         print(
             f"Loading model '{config_dict['model_transformers']['name']}' with quantisation: "
@@ -172,8 +168,8 @@ def setup_model(config_dict: dict) -> dict:
             tokeniser.padding_side = "left"
 
         # Store the model and tokeniser
-        model_dict["model_transformers"] = model
-        model_dict["tokeniser"] = tokeniser
+        config_dict["model_transformers"]["model"] = model
+        config_dict["model_transformers"]["tokeniser"] = tokeniser
 
     elif config_dict["model_bedrock"]["turned_on"]:
         # Initialise a Boto3 Session with the specified profile
@@ -184,9 +180,9 @@ def setup_model(config_dict: dict) -> dict:
 
         # Initialise the Bedrock Runtime client from the session
         bedrock_runtime = session.client(service_name="bedrock-runtime")
-        model_dict["bedrock_runtime"] = bedrock_runtime
+        config_dict["model_bedrock"]["bedrock_runtime"] = bedrock_runtime
 
-    return model_dict
+    return config_dict
 
 
 def load_and_prepare_dataset(config_dict: dict) -> Dataset:
